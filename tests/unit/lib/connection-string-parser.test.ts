@@ -183,9 +183,7 @@ describe("parseConnectionString", () => {
     // driver reads as a path on the server process rather than the machine that pasted it.
     describe("tlsCAFile (#842)", () => {
       test("is reported rather than passed through silently", () => {
-        const result = parseConnectionString(
-          "mongodb://user:pass@host:27017/db?tls=true&tlsCAFile=global-bundle.pem",
-        );
+        const result = parseConnectionString("mongodb://user:pass@host:27017/db?tls=true&tlsCAFile=global-bundle.pem");
         expect(result!.tlsFileParam).toBe("tlsCAFile=global-bundle.pem");
         // the TLS boolean is still read normally - the two signals are independent
         expect(result!.sslMode).toBe("verify-system");
