@@ -49,12 +49,13 @@ export interface ParsedConnection {
    * #842) rather than a value SSLMode could express, kept verbatim for the same reason
    * `unmappedTLSParam` is.
    *
-   * The driver reads this as a path on the machine running the server process (measured:
-   * mongodb 7.6.0's `fs.readFile` throws ENOENT before any network traffic when the file is
-   * absent there), not the machine the string was pasted on. The form already has a place
-   * for the certificate's contents - the CA box under SSL / TLS, `ssl.caCert` in the
-   * connection config - so the fix is to point the user there rather than pass the
-   * parameter through to a driver that cannot honour it. Kept separate from
+   * The driver reads this as a path on the machine running the server process, which in a
+   * container is not the machine the string was pasted on (measured: mongodb 7.6.0's
+   * `fs.readFile` throws ENOENT before any network traffic when the file is absent there).
+   * The parameter stays in the URI, and the form already has a place for the certificate's
+   * contents - the CA box under SSL / TLS, `ssl.caCert` in the connection config - which
+   * wins over it: the driver loads the file only when no `ca` option is set (`options.ca ??=`
+   * in mongo_client.js), so the fix is to point the user there. Kept separate from
    * `unmappedTLSParam`: that field is documented around SSLMode's own value space, and a
    * file path is not a value SSLMode could ever express.
    */
@@ -334,7 +335,10 @@ function readMongoTLS(uri: string): TLSIntent {
 
   if (intent.sslMode === undefined || intent.sslMode === "disable") return intent;
   const relax = params.get("tlsinsecure") ?? params.get("tlsallowinvalidcertificates");
-  return relax !== undefined && relax.value.toLowerCase() === "true" ? { sslMode: "require" } : intent;
+  if (relax !== undefined && relax.value.toLowerCase() === "true") return { sslMode: "require" };
+  // `tlsCAFile` pins the chain to a CA the URI names rather than the system store, which is
+  // `verify-ca`: the mode that shows the CA box the paste banner points at (#842).
+  return params.has("tlscafile") ? { sslMode: "verify-ca" } : intent;
 }
 
 /**
@@ -455,13 +459,14 @@ function parseMongoDBString(uri: string): ParsedConnection {
     // Extract database from path
     const withoutProtocol = uri.replace(/^mongodb(\+srv)?:\/\//, "");
 
-    // The authority (credentials + host) ends at the first "/", same boundary the host
-    // and database extraction below already use. More than one literal "@" in it means
-    // an unescaped reserved character in the credentials - `p@ss:w#rd@host` - makes the
-    // auth/host split ambiguous, so refuse to guess rather than mis-split it (#842).
-    // Percent-encoded credentials (`p%40ss`) never trigger this: the encoded form has
-    // exactly one literal "@".
-    const authorityEnd = withoutProtocol.indexOf("/");
+    // The authority (credentials + host) ends at the first "/" or "?", where the driver's
+    // own grammar ends it, so an "@" in an option value is not counted. More than one
+    // literal "@" in it means an unescaped reserved character in the credentials -
+    // `p@ss:w#rd@host` - makes the auth/host split ambiguous, so refuse to guess rather
+    // than mis-split it (#842). The driver refuses the same string as "Invalid connection
+    // string". Percent-encoded credentials (`p%40ss`) never trigger this: the encoded form
+    // has exactly one literal "@".
+    const authorityEnd = withoutProtocol.search(/[/?]/);
     const authority = authorityEnd >= 0 ? withoutProtocol.slice(0, authorityEnd) : withoutProtocol;
     if ((authority.match(/@/g) ?? []).length > 1) {
       result.credentialsAmbiguous = true;

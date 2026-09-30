@@ -782,6 +782,27 @@ export function useConnectionForm({ isOpen, onConnect, editConnection, onTestCon
 
     setShowPasteInput(false);
     setPasteInput("");
+    // The parser refused to guess a credentials split (#842), so user, password and host
+    // were left as they were above. The paste is still in the Connection URI field, where
+    // it can be percent-encoded; the driver refuses it as it stands.
+    if (parsed.credentialsAmbiguous) {
+      setTestResult({
+        tone: "warning",
+        message:
+          'Username and password could not be read: the credentials hold more than one unescaped "@", so where the host starts is ambiguous. Percent-encode it (%40) in the Connection URI field, or switch to Host / Port and fill in the fields directly.',
+      });
+      return;
+    }
+    // A file-path TLS parameter (#842) is read on the machine running the server, which in
+    // a container is not the one the string was pasted on. It stays in the URI, and a CA
+    // pasted into the form wins over it (see connection-string-parser.ts).
+    if (parsed.tlsFileParam) {
+      setTestResult({
+        tone: "warning",
+        message: `"${parsed.tlsFileParam}" is a file path, which the server reads when it connects, not this browser. The other fields were filled in. Unless that file is on the server, open SSL / TLS and paste the certificate's contents into the CA field: it is used instead of the file.`,
+      });
+      return;
+    }
     // A TLS parameter the parser refused to map is the one thing a green "parsed
     // successfully" must not swallow: the user asked for encryption and the form is still
     // showing whatever mode it held. Postgres's `prefer`/`allow` and MySQL's `PREFERRED`
@@ -797,25 +818,6 @@ export function useConnectionForm({ isOpen, onConnect, editConnection, onTestCon
     // `handleConnect`'s degraded save); now that the warning tone exists for that
     // caller too, this is the same caution and gets the same tone. The sentence still
     // leads with what was NOT applied and says outright that the other fields were.
-    // A credentials split the parser refused to guess at (#842) leaves user/password/host
-    // unset above, so this has to come before the success banner, not after it.
-    if (parsed.credentialsAmbiguous) {
-      setTestResult({
-        tone: "warning",
-        message:
-          'Username and password could not be parsed: this string has more than one unescaped "@" in its credentials, which makes the split ambiguous. Percent-encode special characters (e.g. "@" as %40) in the connection string, or fill in Host, Username and Password directly.',
-      });
-      return;
-    }
-    // A file-path TLS parameter (#842) names a path on the machine running the server,
-    // not the one the string was pasted on, so the driver cannot read it either way.
-    if (parsed.tlsFileParam) {
-      setTestResult({
-        tone: "warning",
-        message: `TLS setting not applied: "${parsed.tlsFileParam}" names a file on your machine, which the server cannot read. Open SSL / TLS and paste the certificate's contents into the CA field instead.`,
-      });
-      return;
-    }
     if (parsed.unmappedTLSParam) {
       setTestResult({
         tone: "warning",

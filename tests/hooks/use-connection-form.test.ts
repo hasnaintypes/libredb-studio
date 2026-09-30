@@ -2779,6 +2779,8 @@ describe("useConnectionForm", () => {
     expect(result.current.testResult!.tone).toBe("warning");
     expect(result.current.testResult!.message).toContain("tlsCAFile=global-bundle.pem");
     expect(result.current.testResult!.message).toContain("CA field");
+    // the mode that shows the CA box and says to paste into it
+    expect(result.current.sslMode).toBe("verify-ca");
     // the fields that could be read were still filled in
     expect(result.current.host).toBe("host");
   });

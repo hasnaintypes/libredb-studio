@@ -177,6 +177,14 @@ describe("parseConnectionString", () => {
       test("a string with no credentials never triggers it", () => {
         expect(parseConnectionString("mongodb://host:27017/db")!.credentialsAmbiguous).toBeUndefined();
       });
+
+      // The driver accepts this string: its authority ends at the first "/" or "?".
+      test("an @ in an option value after a bare ? never triggers it", () => {
+        const result = parseConnectionString("mongodb://user:pass@host:27017?appName=me@laptop");
+        expect(result!.credentialsAmbiguous).toBeUndefined();
+        expect(result!.user).toBe("user");
+        expect(result!.password).toBe("pass");
+      });
     });
 
     // #842: AWS DocumentDB's own console gives out `tlsCAFile=global-bundle.pem`, which the
@@ -185,8 +193,24 @@ describe("parseConnectionString", () => {
       test("is reported rather than passed through silently", () => {
         const result = parseConnectionString("mongodb://user:pass@host:27017/db?tls=true&tlsCAFile=global-bundle.pem");
         expect(result!.tlsFileParam).toBe("tlsCAFile=global-bundle.pem");
-        // the TLS boolean is still read normally - the two signals are independent
-        expect(result!.sslMode).toBe("verify-system");
+        // a CA file pins the chain to that CA rather than the system store, so the form lands
+        // on the mode whose CA box the paste banner points at
+        expect(result!.sslMode).toBe("verify-ca");
+      });
+
+      test("pins an SRV string to verify-ca as well", () => {
+        const uri = "mongodb+srv://user:pass@cluster0.example.net/db?tlsCAFile=ca.pem";
+        expect(parseConnectionString(uri)!.sslMode).toBe("verify-ca");
+      });
+
+      test("leaves a relaxed certificate check on require", () => {
+        const uri = "mongodb://user:pass@host/db?tls=true&tlsCAFile=ca.pem&tlsInsecure=true";
+        expect(parseConnectionString(uri)!.sslMode).toBe("require");
+      });
+
+      test("leaves TLS off when the URI turns it off", () => {
+        const uri = "mongodb://user:pass@host/db?tls=false&tlsCAFile=ca.pem";
+        expect(parseConnectionString(uri)!.sslMode).toBe("disable");
       });
 
       test("is absent for a string with no file-path TLS parameter", () => {
