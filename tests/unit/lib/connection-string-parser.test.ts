@@ -148,6 +148,53 @@ describe("parseConnectionString", () => {
     test("plain mongodb:// with no TLS parameter says nothing about TLS", () => {
       expect(parseConnectionString("mongodb://user:pass@host:27017/appdb")!.sslMode).toBeUndefined();
     });
+
+    // #842: an unescaped "@" in the password makes the auth/host split ambiguous instead
+    // of refusing - `p@ss:w#rd` read as password "p", host "ss".
+    describe("ambiguous credentials (#842)", () => {
+      test("more than one literal @ before the host is refused, not guessed at", () => {
+        const result = parseConnectionString("mongodb://user:p@ss:w#rd@realhost/db");
+        expect(result!.credentialsAmbiguous).toBe(true);
+        expect(result!.user).toBeUndefined();
+        expect(result!.password).toBeUndefined();
+        expect(result!.host).toBeUndefined();
+        // the original paste is still there for the connection-string mode to use
+        expect(result!.connectionString).toBe("mongodb://user:p@ss:w#rd@realhost/db");
+      });
+
+      test("a properly percent-encoded password never triggers it", () => {
+        const result = parseConnectionString("mongodb://user:p%40ss@host/db");
+        expect(result!.credentialsAmbiguous).toBeUndefined();
+        expect(result!.password).toBe("p@ss");
+      });
+
+      test("a normal multi-host replica set string never triggers it", () => {
+        const result = parseConnectionString("mongodb://user:pass@host1:27017,host2:27018/mydb?replicaSet=rs0");
+        expect(result!.credentialsAmbiguous).toBeUndefined();
+        expect(result!.host).toBe("host1");
+      });
+
+      test("a string with no credentials never triggers it", () => {
+        expect(parseConnectionString("mongodb://host:27017/db")!.credentialsAmbiguous).toBeUndefined();
+      });
+    });
+
+    // #842: AWS DocumentDB's own console gives out `tlsCAFile=global-bundle.pem`, which the
+    // driver reads as a path on the server process rather than the machine that pasted it.
+    describe("tlsCAFile (#842)", () => {
+      test("is reported rather than passed through silently", () => {
+        const result = parseConnectionString(
+          "mongodb://user:pass@host:27017/db?tls=true&tlsCAFile=global-bundle.pem",
+        );
+        expect(result!.tlsFileParam).toBe("tlsCAFile=global-bundle.pem");
+        // the TLS boolean is still read normally - the two signals are independent
+        expect(result!.sslMode).toBe("verify-system");
+      });
+
+      test("is absent for a string with no file-path TLS parameter", () => {
+        expect(parseConnectionString("mongodb://user:pass@host:27017/db?tls=true")!.tlsFileParam).toBeUndefined();
+      });
+    });
   });
 
   // ── Redis ───────────────────────────────────────────────────────────────

@@ -44,6 +44,31 @@ export interface ParsedConnection {
    * maps below do not know: guessing there is the same defect with less information.
    */
   unmappedTLSParam?: string;
+  /**
+   * A MongoDB TLS parameter naming a file path (`tlsCAFile`, the only one reported so far,
+   * #842) rather than a value SSLMode could express, kept verbatim for the same reason
+   * `unmappedTLSParam` is.
+   *
+   * The driver reads this as a path on the machine running the server process (measured:
+   * mongodb 7.6.0's `fs.readFile` throws ENOENT before any network traffic when the file is
+   * absent there), not the machine the string was pasted on. The form already has a place
+   * for the certificate's contents - the CA box under SSL / TLS, `ssl.caCert` in the
+   * connection config - so the fix is to point the user there rather than pass the
+   * parameter through to a driver that cannot honour it. Kept separate from
+   * `unmappedTLSParam`: that field is documented around SSLMode's own value space, and a
+   * file path is not a value SSLMode could ever express.
+   */
+  tlsFileParam?: string;
+  /**
+   * Set when a pasted MongoDB URI's credentials segment has more than one unescaped `@`,
+   * which makes the auth/host split ambiguous: `mongodb://user:p@ss@host/db` reads as
+   * password `p`, host `ss` (#842) instead of refusing. A properly percent-encoded password
+   * (`p%40ss`) never sets this - the encoded form has exactly one literal `@`.
+   *
+   * `user`, `password` and `host` are left unset rather than populated with the wrong
+   * guess; `connectionString` still carries the original paste unchanged.
+   */
+  credentialsAmbiguous?: boolean;
 }
 
 /**
@@ -313,6 +338,21 @@ function readMongoTLS(uri: string): TLSIntent {
 }
 
 /**
+ * MongoDB TLS parameters that name a file path rather than a value SSLMode could express.
+ * `tlsCAFile` is the only one reported so far (#842, via AWS DocumentDB's own connection
+ * string) - scoped to it rather than the driver's full file-path option set until another
+ * is actually seen.
+ */
+function readMongoTLSFileParam(uri: string): string | undefined {
+  const queryStart = uri.indexOf("?");
+  if (queryStart < 0) return undefined;
+  for (const [name, value] of new URLSearchParams(uri.slice(queryStart + 1))) {
+    if (name.toLowerCase() === "tlscafile") return `${name}=${value}`;
+  }
+  return undefined;
+}
+
+/**
  * ADO.NET's Encrypt/TrustServerCertificate pair, from either the keyword string or an
  * mssql:// query. Encrypt on with TrustServerCertificate on is `require`: encrypted, chain
  * unchecked. Encrypt on with it off - including absent, which is the documented default -
@@ -399,10 +439,12 @@ function withSSLMode(parsed: ParsedConnection | null, sslMode: SSLMode): ParsedC
 }
 
 function parseMongoDBString(uri: string): ParsedConnection {
+  const tlsFileParam = readMongoTLSFileParam(uri);
   const result: ParsedConnection = {
     type: "mongodb",
     connectionString: uri,
     ...readMongoTLS(uri),
+    ...(tlsFileParam ? { tlsFileParam } : {}),
   };
 
   try {
@@ -412,6 +454,20 @@ function parseMongoDBString(uri: string): ParsedConnection {
 
     // Extract database from path
     const withoutProtocol = uri.replace(/^mongodb(\+srv)?:\/\//, "");
+
+    // The authority (credentials + host) ends at the first "/", same boundary the host
+    // and database extraction below already use. More than one literal "@" in it means
+    // an unescaped reserved character in the credentials - `p@ss:w#rd@host` - makes the
+    // auth/host split ambiguous, so refuse to guess rather than mis-split it (#842).
+    // Percent-encoded credentials (`p%40ss`) never trigger this: the encoded form has
+    // exactly one literal "@".
+    const authorityEnd = withoutProtocol.indexOf("/");
+    const authority = authorityEnd >= 0 ? withoutProtocol.slice(0, authorityEnd) : withoutProtocol;
+    if ((authority.match(/@/g) ?? []).length > 1) {
+      result.credentialsAmbiguous = true;
+      return result;
+    }
+
     const atIndex = withoutProtocol.indexOf("@");
     const afterAuth = atIndex >= 0 ? withoutProtocol.slice(atIndex + 1) : withoutProtocol;
 

@@ -797,6 +797,25 @@ export function useConnectionForm({ isOpen, onConnect, editConnection, onTestCon
     // `handleConnect`'s degraded save); now that the warning tone exists for that
     // caller too, this is the same caution and gets the same tone. The sentence still
     // leads with what was NOT applied and says outright that the other fields were.
+    // A credentials split the parser refused to guess at (#842) leaves user/password/host
+    // unset above, so this has to come before the success banner, not after it.
+    if (parsed.credentialsAmbiguous) {
+      setTestResult({
+        tone: "warning",
+        message:
+          'Username and password could not be parsed: this string has more than one unescaped "@" in its credentials, which makes the split ambiguous. Percent-encode special characters (e.g. "@" as %40) in the connection string, or fill in Host, Username and Password directly.',
+      });
+      return;
+    }
+    // A file-path TLS parameter (#842) names a path on the machine running the server,
+    // not the one the string was pasted on, so the driver cannot read it either way.
+    if (parsed.tlsFileParam) {
+      setTestResult({
+        tone: "warning",
+        message: `TLS setting not applied: "${parsed.tlsFileParam}" names a file on your machine, which the server cannot read. Open SSL / TLS and paste the certificate's contents into the CA field instead.`,
+      });
+      return;
+    }
     if (parsed.unmappedTLSParam) {
       setTestResult({
         tone: "warning",
