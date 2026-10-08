@@ -635,7 +635,7 @@ describe("View Source opens a tab that reads the definition", () => {
     expect(screen.queryByTestId("source-editor")).toBeNull();
   });
 
-  test("a second View Source on the same object focuses the open tab instead of reading again", async () => {
+  test("a second View Source on the same object focuses the open tab AND re-reads it (#1407)", async () => {
     render(<Studio />);
     act(() => sidebarActions().onViewSource?.(ROUTINE));
     await waitFor(() => expect(screen.getByTestId("source-editor")).toBeTruthy());
@@ -647,8 +647,10 @@ describe("View Source opens a tab that reads the definition", () => {
     await waitFor(() => expect(screen.getByTestId("source-editor")).toBeTruthy());
 
     expect(tabNames()).toEqual(["Query 1", "Source: app.order_total(integer)"]);
-    // The document is still on the tab, so nothing was re-read: the address did not move.
-    expect(sourceReads).toHaveLength(1);
+    // No second tab minted, but a second read DID go out: a change made by another client
+    // between the two activations trips neither the stale banner nor a failure, and before
+    // this fix the only way to see it was to close the tab and reopen it.
+    expect(sourceReads).toHaveLength(2);
   });
 
   test("three further renders of the shell issue no second read", async () => {
@@ -1093,7 +1095,7 @@ describe("a key activated in the key browser opens its Source tab", () => {
     expect(mockExecuteQuery).not.toHaveBeenCalled();
   });
 
-  test("a second activation of the same key focuses its tab instead of reading again", async () => {
+  test("a second activation of the same key focuses its tab AND re-reads it (#1407)", async () => {
     render(<Studio />);
     act(() => openKey("/app/cfg"));
     await waitFor(() => expect(tabNames()).toEqual(["Query 1", "Source: /app/cfg"]));
@@ -1101,7 +1103,7 @@ describe("a key activated in the key browser opens its Source tab", () => {
     act(() => openKey("/app/cfg"));
 
     expect(tabNames()).toEqual(["Query 1", "Source: /app/cfg"]);
-    await waitFor(() => expect(sourceReads).toHaveLength(1));
+    await waitFor(() => expect(sourceReads).toHaveLength(2));
   });
 });
 
