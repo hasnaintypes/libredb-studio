@@ -11,7 +11,7 @@ import { useTabManager, PREVIEW_PAGE_SIZE } from "@/hooks/use-tab-manager";
 import { holdWorkspaceOwner } from "@/lib/config/base-path";
 import type { DatabaseConnection } from "@/lib/types";
 import type { DetailedObject } from "@/lib/db/detailed-object";
-import type { DatabaseObject } from "@/lib/db/types";
+import type { DatabaseObject, ObjectSourceDocument } from "@/lib/db/types";
 import type { ProviderMetadata } from "@/hooks/use-provider-metadata";
 import { EtcdProvider } from "@/lib/db/providers/keyvalue/etcd/index";
 import { Neo4jProvider } from "@/lib/db/providers/graph/neo4j/index";
@@ -1937,7 +1937,7 @@ describe("useTabManager opens a Source tab", () => {
     expect(result.current.activeTabId).toBe(first);
   });
 
-  const definitionDocument = {
+  const definitionDocument: ObjectSourceDocument = {
     path: orderTotal.path,
     kind: "function",
     parts: [
