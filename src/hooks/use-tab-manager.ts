@@ -610,6 +610,26 @@ export function useTabManager({ activeConnection, metadata, schema, persistWorks
       const open = tabs.find(matchesAddress);
       if (open !== undefined) {
         setActiveTabId(open.id);
+        /*
+         * Re-read on reactivation, clearing the same three fields the viewer's own `reread`
+         * does (#1407): a second click on the same row is the reader asking what this object
+         * holds NOW, and the only way back before this was the stale banner, shown only after
+         * a DDL ran in THIS session, which a change from another client never trips.
+         *
+         * Skipped while the tab is DIRTY, and the open tab's own flag rather than a fresh
+         * read of the draft store: overwriting an unsaved edit on a second click is the exact
+         * defect the stale banner's control already refuses elsewhere, and the pane keeps
+         * showing it until the reader saves or discards it deliberately.
+         */
+        if (open.source !== undefined && open.source.dirty !== true) {
+          setTabs((prev) =>
+            prev.map((tab) =>
+              tab.id === open.id && tab.source !== undefined
+                ? { ...tab, source: { ...tab.source, document: undefined, failure: undefined, readAtToken: undefined } }
+                : tab,
+            ),
+          );
+        }
         return;
       }
       /*

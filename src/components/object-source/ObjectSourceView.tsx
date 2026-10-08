@@ -1412,6 +1412,25 @@ export function ObjectSourceView(props: ObjectSourceViewProps): React.JSX.Elemen
         <span className="ml-auto shrink-0 text-[11px] uppercase text-muted-foreground" data-testid="object-source-kind">
           {props.kindLabel}
         </span>
+        {/*
+          Available whenever a document is shown (#1407), not only after a catalog change (the
+          stale banner below) or a failed read (`Try again`): a change from another client trips
+          neither, and before this the reader's only way back was to close and reopen the tab.
+          `reread` is the same handler both of those already call.
+        */}
+        {renderableDocument !== undefined && (
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            className="shrink-0"
+            data-testid="object-source-refresh"
+            aria-label="Read this definition again"
+            onClick={reread}
+          >
+            <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </div>
 
       {stale && (

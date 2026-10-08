@@ -1937,6 +1937,86 @@ describe("useTabManager opens a Source tab", () => {
     expect(result.current.activeTabId).toBe(first);
   });
 
+  const definitionDocument = {
+    path: orderTotal.path,
+    kind: "function",
+    parts: [
+      {
+        id: "definition",
+        label: "Function",
+        text: "CREATE FUNCTION order_total(integer) RETURNS numeric AS $$ SELECT 1 $$;",
+        language: "sql",
+        form: "complete",
+        origin: "regenerated",
+      },
+    ],
+  };
+
+  test("a second View Source clears the document so the viewer re-reads it (#1407)", () => {
+    // A change from another client between the two activations trips nothing the tab already
+    // tracks: the stale banner fires only on a DDL this SESSION ran, and before this fix the
+    // only way back was to close the tab and reopen it.
+    const { result } = renderHook(() =>
+      useTabManager({ activeConnection: makeConnection(), metadata: defaultMetadata, schema: [] }),
+    );
+
+    act(() => {
+      result.current.openSourceTab(orderTotal);
+    });
+    const tabId = result.current.tabs[1].id;
+    act(() => {
+      result.current.updateTabById(tabId, {
+        source: { path: orderTotal.path, kind: "function", document: definitionDocument, readAtToken: 2 },
+      });
+    });
+    act(() => {
+      result.current.setActiveTabId("default");
+    });
+
+    act(() => {
+      result.current.openSourceTab(orderTotal);
+    });
+
+    expect(result.current.tabs).toHaveLength(2);
+    expect(result.current.activeTabId).toBe(tabId);
+    expect(result.current.tabs[1].source?.document).toBeUndefined();
+    expect(result.current.tabs[1].source?.readAtToken).toBeUndefined();
+  });
+
+  test("a second View Source on a DIRTY tab leaves the document alone, so an unsaved edit is never replaced (#1407)", () => {
+    const { result } = renderHook(() =>
+      useTabManager({ activeConnection: makeConnection(), metadata: defaultMetadata, schema: [] }),
+    );
+
+    act(() => {
+      result.current.openSourceTab(orderTotal);
+    });
+    const tabId = result.current.tabs[1].id;
+    act(() => {
+      result.current.updateTabById(tabId, {
+        source: {
+          path: orderTotal.path,
+          kind: "function",
+          document: definitionDocument,
+          readAtToken: 2,
+          dirty: true,
+        },
+      });
+    });
+    act(() => {
+      result.current.setActiveTabId("default");
+    });
+
+    act(() => {
+      result.current.openSourceTab(orderTotal);
+    });
+
+    expect(result.current.activeTabId).toBe(tabId);
+    expect(result.current.tabs[1].source?.document).toEqual(definitionDocument);
+    expect(result.current.tabs[1].source?.readAtToken).toBe(2);
+    expect(result.current.tabs[1].source?.dirty).toBe(true);
+  });
+
   test("the match is on the path and the KIND, so one name in two roles opens two tabs", () => {
     // Measured on MySQL, MariaDB and DuckDB: one name addresses more than one object of
     // different kinds in one container. Matching on the path alone would show a reader the

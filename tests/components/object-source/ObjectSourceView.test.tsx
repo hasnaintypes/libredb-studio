@@ -725,6 +725,35 @@ describe("ObjectSourceView", () => {
     await waitFor(() => expect(screen.queryByTestId("object-source-stale") === null).toBe(true));
   });
 
+  test("the refresh control re-reads a document shown with no catalog change and no failure (#1407)", async () => {
+    // Neither of the other two controls is drawn here: nothing marked this tab stale and
+    // nothing failed, so before this control existed a change from another client had no way
+    // back short of closing the tab and reopening it.
+    const reader = readerFor(oneReadablePart);
+    const patches: ObjectSourcePatch[] = [];
+    const record = (patch: ObjectSourcePatch) => {
+      patches.push(patch);
+    };
+    render(<Harness reader={reader} refreshToken={0} onPatch={record} />);
+    await waitFor(() => expect(screen.getByTestId("source-editor")).toBeTruthy());
+    expect(screen.queryByTestId("object-source-stale-reread")).toBeNull();
+    expect(screen.queryByTestId("object-source-failure-retry")).toBeNull();
+
+    await userEvent.click(screen.getByTestId("object-source-refresh"));
+
+    await waitFor(() => expect(reader.calls).toBe(2));
+    const clear = patches.find((patch) => Object.hasOwn(patch, "document") && patch.document === undefined);
+    expect(clear).toBeTruthy();
+    expect(Object.hasOwn(clear!, "failure")).toBe(true);
+    expect(Object.hasOwn(clear!, "readAtToken")).toBe(true);
+  });
+
+  test("the refresh control is absent until a document is on screen", () => {
+    const pending: ObjectSourceReader = () => new Promise(() => {});
+    render(<Harness reader={pending} refreshToken={0} />);
+    expect(screen.queryByTestId("object-source-refresh")).toBeNull();
+  });
+
   test("keeps the part the reader was on across a re-read, so the stale control does not move them", async () => {
     /*
      * Found in the browser on Oracle XE 21.3.0.0.0 (#789, Task 23), driving the ACTION rather
