@@ -4,8 +4,8 @@ import { appFetch, SESSION_REQUIRED_CODE } from "@/lib/config/base-path";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { DatabaseConnection } from "@/lib/types";
 import { detailedObjects, schemaContextOf, type DetailedObject } from "@/lib/db/detailed-object";
-import { relationKindIds } from "@/lib/db/object-kinds";
-import type { DatabaseObject, ObjectDetail, ProviderCapabilities } from "@/lib/db/types";
+import { containerDepth, relationKindIds } from "@/lib/db/object-kinds";
+import type { Container, DatabaseObject, ObjectDetail, ProviderCapabilities } from "@/lib/db/types";
 import { useReadGeneration } from "@/hooks/use-read-generation";
 import { useToast } from "@/hooks/use-toast";
 import { storage } from "@/lib/storage";
@@ -76,6 +76,54 @@ function takeLinkedConnectionId(): string | null {
   url.searchParams.delete(CONNECTION_LINK_PARAM);
   window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   return linked;
+}
+
+/**
+ * The containers a connect-time schema read should scan, scoped to the session default on a
+ * two-level engine so a multi-catalog cluster is not walked whole on every connect (#1402).
+ *
+ * Left unscoped (`undefined`), `/api/db/objects/inventory` enumerates every container itself: on a
+ * depth-2 engine (catalog → schema) that is one `listContainers()` call per catalog, which on a
+ * Trino cluster with Hive or Iceberg catalogs is a full metastore walk on every page load. The top
+ * level alone marks which catalog is the session default (every provider sets `isSessionDefault`
+ * there, #789), so one cheap top-level listing decides whether a second, narrower listing is worth
+ * making at all - the other catalogs are left for the tree to read lazily, same as it always has.
+ *
+ * A single-level engine (`depth` 0 or 1) has nothing to scope: `enumerateContainers` there is
+ * already one listing, so this returns `undefined` and leaves the route to make it as before. It
+ * also falls back to `undefined` - the unscoped read - when no catalog is pinned or the pinned one
+ * has no schemas of its own, rather than inventing a "scan nothing" request the route rejects.
+ */
+interface ScopedContainers {
+  readonly containers: readonly (readonly string[])[];
+  /** The deepest-level default among the scoped containers, same as the route's own would answer. */
+  readonly defaultContainer?: readonly string[];
+}
+
+async function scopedContainers(payload: object, depth: 0 | 1 | 2): Promise<ScopedContainers | undefined> {
+  if (depth !== 2) return undefined;
+
+  const post = (body: unknown): [string, RequestInit] => [
+    "/api/db/objects/containers",
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+  ];
+
+  const topRes = await appFetch(...post(payload));
+  if (!topRes.ok) return undefined;
+  const top = (await topRes.json()) as Container[];
+  const defaultTop = top.find((container) => container.isSessionDefault === true);
+  if (defaultTop === undefined) return undefined;
+
+  const childRes = await appFetch(...post({ ...payload, parent: defaultTop.path }));
+  if (!childRes.ok) return undefined;
+  const children = (await childRes.json()) as Container[];
+  if (children.length === 0) return undefined;
+
+  const defaultChild = children.find((container) => container.isSessionDefault === true);
+  return {
+    containers: children.map((container) => container.path),
+    ...(defaultChild === undefined ? {} : { defaultContainer: defaultChild.path }),
+  };
 }
 
 export function useConnectionManager(storageReady = false) {
@@ -245,14 +293,28 @@ export function useConnectionManager(storageReady = false) {
           return;
         }
 
+        const scoped = await scopedContainers(payload, containerDepth(capabilities));
         const objectsRes = await appFetch(
-          ...init("/api/db/objects/inventory", { ...payload, kinds, includeColumns: true }),
+          ...init("/api/db/objects/inventory", {
+            ...payload,
+            kinds,
+            includeColumns: true,
+            ...(scoped === undefined ? {} : { containers: scoped.containers }),
+          }),
         );
         if (!objectsRes.ok) {
           const body = await objectsRes.json().catch(() => ({}));
           throw new Error(body.error || "Failed to read the database objects");
         }
-        const { objects, details, truncated, defaultContainer } = (await objectsRes.json()) as {
+        // Scoping this read bypasses the route's own enumeration, so its `defaultContainer` -
+        // computed only on the walk we skipped - is never on this response; the one `scoped`
+        // read off the same containers call stands in for it.
+        const {
+          objects,
+          details,
+          truncated,
+          defaultContainer: routeDefaultContainer,
+        } = (await objectsRes.json()) as {
           objects?: DatabaseObject[];
           details?: ObjectDetail[];
           truncated?: { limit: number; reason: string };
@@ -273,7 +335,7 @@ export function useConnectionManager(storageReady = false) {
           });
         }
         setSchema(detailedObjects(objects, details ?? []));
-        setDefaultContainer(defaultContainer);
+        setDefaultContainer(scoped?.defaultContainer ?? routeDefaultContainer);
         setSchemaError(null);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Unknown error";

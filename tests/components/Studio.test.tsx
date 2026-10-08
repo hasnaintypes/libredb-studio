@@ -2330,6 +2330,20 @@ describe("Studio", () => {
     expect(mockSetSchema).toHaveBeenCalledWith([]);
   });
 
+  test("connection-change effect fetches schema once even after metadata arrives late (#1402)", () => {
+    connMgrOverride = { activeConnection: pgConn };
+    metadataOverride = { metadata: null };
+    const { rerender } = render(<Studio />);
+    expect(mockFetchSchema).toHaveBeenCalledTimes(1);
+
+    // Simulates `useProviderMetadata` resolving after the connection is already set, with the
+    // connection itself unchanged: before the fix this re-ran the connection-change effect and
+    // issued a second, identical schema read.
+    metadataOverride = {};
+    rerender(<Studio />);
+    expect(mockFetchSchema).toHaveBeenCalledTimes(1);
+  });
+
   // --- profiler/codegen/testdata callbacks ---
   //
   // On the mobile schema tab since the sidebar became the object tree: these four are
