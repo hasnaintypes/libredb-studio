@@ -732,19 +732,33 @@ describe("ObjectSourceView", () => {
     // Neither of the other two controls is drawn here: nothing marked this tab stale and
     // nothing failed, so before this control existed a change from another client had no way
     // back short of closing the tab and reopening it.
-    const reader = readerFor(oneReadablePart);
+    const original = "CREATE OR REPLACE PACKAGE APP.APP_ORDERS_PKG AS\n  FUNCTION total RETURN NUMBER;\nEND;";
+    const changed = `${original}\n-- changed by another client`;
+    const answers: ObjectSourceDocument[] = [
+      oneReadablePart,
+      { ...oneReadablePart, parts: [{ ...oneReadablePart.parts[0], text: changed }] },
+    ];
+    const reader = Object.assign(
+      async () => {
+        reader.calls += 1;
+        return answers[reader.calls - 1];
+      },
+      { calls: 0 },
+    );
     const patches: ObjectSourcePatch[] = [];
     const record = (patch: ObjectSourcePatch) => {
       patches.push(patch);
     };
     render(<Harness reader={reader} refreshToken={0} onPatch={record} />);
-    await waitFor(() => expect(screen.getByTestId("source-editor")).toBeTruthy());
+    await waitFor(() => expect(editorValue()).toBe(original));
     expect(screen.queryByTestId("object-source-stale-reread")).toBeNull();
     expect(screen.queryByTestId("object-source-failure-retry")).toBeNull();
 
     await userEvent.click(screen.getByTestId("object-source-refresh"));
 
     await waitFor(() => expect(reader.calls).toBe(2));
+    // The second read's answer is on screen, not just requested.
+    await waitFor(() => expect(editorValue()).toBe(changed));
     const clear = patches.find((patch) => Object.hasOwn(patch, "document") && patch.document === undefined);
     expect(clear).toBeTruthy();
     expect(Object.hasOwn(clear!, "failure")).toBe(true);

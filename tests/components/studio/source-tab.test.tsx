@@ -1531,6 +1531,49 @@ describe("the tab strip's dirty mark survives a remount and still clears", () =>
   });
 });
 
+describe("a second View Source on a tab holding an unsaved edit (#1407)", () => {
+  test("keeps the draft, shows the stale banner, and holds its Read again until the edit is resolved", async () => {
+    const DRAFT = "CREATE OR REPLACE FUNCTION app.order_total(integer)\n  RETURNS numeric AS $$ SELECT 99 $$;";
+    sourceAnswer = { status: 200, body: EDITABLE_DOCUMENT };
+    render(<Studio />);
+    await openFunctionTab();
+    await click("object-source-edit");
+    await act(async () => {
+      editorProbe.change?.(DRAFT);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(screen.getByTestId("tab-dirty-dot")).toBeTruthy());
+    expect(screen.queryByTestId("object-source-stale")).toBeNull();
+    // Past the draft debounce, so the remounted pane has a stored draft to restore.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 620));
+    });
+
+    act(() => {
+      screen.getAllByRole("tab")[0].click();
+    });
+    act(() => sidebarActions().onViewSource?.(ROUTINE));
+
+    await waitFor(() => expect(screen.getByTestId("object-source-stale")).toBeTruthy());
+    expect(screen.getByTestId("object-source-stale").textContent).toContain("Save or discard your edit");
+    expect((screen.getByTestId("object-source-stale-reread") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId("object-source-refresh") as HTMLButtonElement).disabled).toBe(true);
+    // The draft is still there to restore, and no read went out to replace it.
+    expect(screen.getByTestId("tab-dirty-dot")).toBeTruthy();
+    expect(screen.getByTestId("object-source-draft-restore")).toBeTruthy();
+    expect(sourceReads).toHaveLength(1);
+
+    // Reverting the buffer resolves the edit, and the banner's control is live again.
+    await act(async () => {
+      editorProbe.change?.(DEFINITION);
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect((screen.getByTestId("object-source-stale-reread") as HTMLButtonElement).disabled).toBe(false),
+    );
+  });
+});
+
 /**
  * D82: the new-tab shortcut, pressed between Confirm and the answer.
  *

@@ -1455,11 +1455,18 @@ export function ObjectSourceView(props: ObjectSourceViewProps): React.JSX.Elemen
           data-testid="object-source-stale"
         >
           <TriangleAlert aria-hidden="true" strokeWidth={1.5} className="h-3.5 w-3.5 shrink-0" />
+          {/*
+            Two ways in: a catalog change in this session, or a second View Source on a dirty
+            tab (`use-tab-manager.ts`). The wording covers both, and `Read again` waits on the
+            edit like the header refresh does, because `reread` drops the document under it.
+          */}
           <span className="min-w-0">
-            This definition was read before a catalog change in this session. It may be out of date.
+            This definition may have changed since it was read.
+            {props.dirty === true && " Save or discard your edit to read it again."}
           </span>
           <Button
             type="button"
+            disabled={props.dirty === true}
             size="sm"
             variant="ghost"
             className="ml-auto h-6 shrink-0 px-2 text-xs"

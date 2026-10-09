@@ -1983,6 +1983,33 @@ describe("useTabManager opens a Source tab", () => {
     expect(result.current.tabs[1].source?.readAtToken).toBeUndefined();
   });
 
+  test("a second View Source on a tab whose read FAILED clears the failure, so the viewer reads again (#1407)", () => {
+    const { result } = renderHook(() =>
+      useTabManager({ activeConnection: makeConnection(), metadata: defaultMetadata, schema: [] }),
+    );
+
+    act(() => {
+      result.current.openSourceTab(orderTotal);
+    });
+    const tabId = result.current.tabs[1].id;
+    act(() => {
+      result.current.updateTabById(tabId, {
+        source: { path: orderTotal.path, kind: "function", failure: "connection reset" },
+      });
+    });
+    act(() => {
+      result.current.setActiveTabId("default");
+    });
+
+    act(() => {
+      result.current.openSourceTab(orderTotal);
+    });
+
+    expect(result.current.activeTabId).toBe(tabId);
+    expect(result.current.tabs[1].source?.failure).toBeUndefined();
+    expect(result.current.tabs[1].source?.document).toBeUndefined();
+  });
+
   test("a second View Source on a DIRTY tab marks it stale instead of clearing it, so an unsaved edit is never replaced (#1407)", () => {
     const { result } = renderHook(() =>
       useTabManager({ activeConnection: makeConnection(), metadata: defaultMetadata, schema: [] }),
