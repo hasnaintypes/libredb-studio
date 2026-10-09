@@ -2344,6 +2344,21 @@ describe("Studio", () => {
     expect(mockFetchSchema).toHaveBeenCalledTimes(1);
   });
 
+  test("connection-change effect re-reads schema when an edit keeps the same id (#1402)", () => {
+    connMgrOverride = { activeConnection: pgConn };
+    const { rerender } = render(<Studio />);
+    expect(mockFetchSchema).toHaveBeenCalledTimes(1);
+    expect(mockResetTransactionState).toHaveBeenCalledTimes(1);
+
+    // Editing a connection keeps its `id` (use-connection-form.ts) but produces a new object:
+    // keying the effect on the id alone would miss this and leave the old schema/transaction
+    // state in place after a save.
+    connMgrOverride = { activeConnection: { ...pgConn, database: "other" } };
+    rerender(<Studio />);
+    expect(mockFetchSchema).toHaveBeenCalledTimes(2);
+    expect(mockResetTransactionState).toHaveBeenCalledTimes(2);
+  });
+
   // --- profiler/codegen/testdata callbacks ---
   //
   // On the mobile schema tab since the sidebar became the object tree: these four are

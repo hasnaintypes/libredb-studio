@@ -487,11 +487,12 @@ export default function Studio() {
   );
 
   // === Cross-hook orchestration: connection-change effect ===
-  // Keyed on the ID, not the object or `metadata`: `activeConnection` is a fresh object on every
-  // render and `metadata` arrives after it, so keying on either re-ran this effect a second time
-  // for the same connection and issued a second identical schema read (#1402). The tab-type update
-  // below, which does need `metadata`, is its own effect for the same reason `StudioWorkspace.tsx`
-  // splits them.
+  // Keyed on `activeConnection`, not `metadata`: `metadata` arrives after the connection is set,
+  // so keying on it too re-ran this effect a second time for the same connection and issued a
+  // second identical schema read (#1402). Editing a connection keeps its `id` but produces a new
+  // object (use-connection-form.ts), and that edit must still re-read the schema, so the id alone
+  // is not enough here. The tab-type update below, which does need `metadata`, is its own effect
+  // for the same reason `StudioWorkspace.tsx` splits them.
   useEffect(() => {
     if (conn.activeConnection) {
       txn.resetTransactionState();
@@ -502,7 +503,7 @@ export default function Studio() {
       conn.setSchema([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conn.activeConnection?.id]);
+  }, [conn.activeConnection]);
 
   const tabType = resolveTabType(metadata?.capabilities);
   useEffect(() => {
