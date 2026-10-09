@@ -153,8 +153,8 @@ export default function Studio() {
    *
    * MERGED BY SPREAD, and an explicitly-undefined key in the patch is therefore a CLEAR
    * rather than a no-op: that is how the stale banner's re-read control works, sending
-   * `{ document: undefined, failure: undefined, readAtToken: undefined }` to put the tab back
-   * into the state the viewer reads from.
+   * `{ document: undefined, failure: undefined, readAtToken: undefined, readAt: undefined }` to
+   * put the tab back into the state the viewer reads from.
    *
    * STABLE across renders, which is a requirement rather than an optimisation: the viewer's
    * read effect lists `onChange` among its dependencies, so a fresh identity every render
@@ -293,7 +293,7 @@ export default function Studio() {
    */
   const handleApplied = useCallback(() => {
     objectsChanged();
-    onSourceChange({ document: undefined, failure: undefined, readAtToken: undefined });
+    onSourceChange({ document: undefined, failure: undefined, readAtToken: undefined, readAt: undefined });
     toast({ title: "Applied. Reading the definition again." });
   }, [objectsChanged, onSourceChange, toast]);
 
@@ -1500,6 +1500,7 @@ export default function Studio() {
                               activePartId={sourceTab.activePartId}
                               refreshToken={objectRefreshToken}
                               readAtToken={sourceTab.readAtToken}
+                              readAt={sourceTab.readAt}
                               editingPartId={sourceTab.editingPartId}
                               dirty={sourceTab.dirty}
                               /*
