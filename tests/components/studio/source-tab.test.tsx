@@ -639,12 +639,23 @@ describe("View Source opens a tab that reads the definition", () => {
     render(<Studio />);
     act(() => sidebarActions().onViewSource?.(ROUTINE));
     await waitFor(() => expect(screen.getByTestId("source-editor")).toBeTruthy());
+    expect((screen.getByTestId("source-editor") as HTMLTextAreaElement).value).toBe(DEFINITION);
 
     act(() => {
       screen.getAllByRole("tab")[0].click();
     });
+    // A change by another client between the two activations: the second read answers with
+    // DIFFERENT text, and that is the fact this test exists to show on screen rather than
+    // merely count.
+    const CHANGED_DEFINITION = `${DEFINITION}\n-- changed by another client`;
+    sourceAnswer = {
+      status: 200,
+      body: { ...readableDocument, parts: [{ ...readableDocument.parts[0], text: CHANGED_DEFINITION }] },
+    };
     act(() => sidebarActions().onViewSource?.(ROUTINE));
-    await waitFor(() => expect(screen.getByTestId("source-editor")).toBeTruthy());
+    await waitFor(() =>
+      expect((screen.getByTestId("source-editor") as HTMLTextAreaElement).value).toBe(CHANGED_DEFINITION),
+    );
 
     expect(tabNames()).toEqual(["Query 1", "Source: app.order_total(integer)"]);
     // No second tab minted, but a second read DID go out: a change made by another client
@@ -1099,11 +1110,24 @@ describe("a key activated in the key browser opens its Source tab", () => {
     render(<Studio />);
     act(() => openKey("/app/cfg"));
     await waitFor(() => expect(tabNames()).toEqual(["Query 1", "Source: /app/cfg"]));
+    await waitFor(() =>
+      expect((screen.getByTestId("source-editor") as HTMLTextAreaElement).value).toBe('{"mode":"on"}'),
+    );
 
+    // Another client wrote the key between the two activations: the second read answers with a
+    // different value, and that is the fact this test exists to show on screen rather than
+    // merely count.
+    sourceAnswer = {
+      status: 200,
+      body: { ...KEY_DOCUMENT, parts: [{ ...KEY_DOCUMENT.parts[0], text: '{"mode":"off"}' }] },
+    };
     act(() => openKey("/app/cfg"));
 
     expect(tabNames()).toEqual(["Query 1", "Source: /app/cfg"]);
     await waitFor(() => expect(sourceReads).toHaveLength(2));
+    await waitFor(() =>
+      expect((screen.getByTestId("source-editor") as HTMLTextAreaElement).value).toBe('{"mode":"off"}'),
+    );
   });
 });
 
