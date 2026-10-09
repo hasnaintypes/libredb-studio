@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { DatabaseConnection } from "@/lib/types";
 import { detailedObjects, schemaContextOf, type DetailedObject } from "@/lib/db/detailed-object";
 import { containerDepth, relationKindIds } from "@/lib/db/object-kinds";
+import { sessionDefaultContainer } from "@/lib/db/container-walk";
 import type { Container, DatabaseObject, ObjectDetail, ProviderCapabilities } from "@/lib/db/types";
 import { useReadGeneration } from "@/hooks/use-read-generation";
 import { useToast } from "@/hooks/use-toast";
@@ -96,7 +97,11 @@ function takeLinkedConnectionId(): string | null {
  */
 interface ScopedContainers {
   readonly containers: readonly (readonly string[])[];
-  /** The deepest-level default among the scoped containers, same as the route's own would answer. */
+  /**
+   * The deepest-level default among the scoped containers, read with `sessionDefaultContainer`
+   * (`container-walk.ts`) so a provider defect that flags more than one container declines here
+   * exactly as it would in the unscoped route, instead of this picking the first one.
+   */
   readonly defaultContainer?: readonly string[];
 }
 
@@ -111,18 +116,18 @@ async function scopedContainers(payload: object, depth: 0 | 1 | 2): Promise<Scop
   const topRes = await appFetch(...post(payload));
   if (!topRes.ok) return undefined;
   const top = (await topRes.json()) as Container[];
-  const defaultTop = top.find((container) => container.isSessionDefault === true);
-  if (defaultTop === undefined) return undefined;
+  const defaultTopPath = sessionDefaultContainer(top);
+  if (defaultTopPath === undefined) return undefined;
 
-  const childRes = await appFetch(...post({ ...payload, parent: defaultTop.path }));
+  const childRes = await appFetch(...post({ ...payload, parent: defaultTopPath }));
   if (!childRes.ok) return undefined;
   const children = (await childRes.json()) as Container[];
   if (children.length === 0) return undefined;
 
-  const defaultChild = children.find((container) => container.isSessionDefault === true);
+  const defaultContainer = sessionDefaultContainer(children);
   return {
     containers: children.map((container) => container.path),
-    ...(defaultChild === undefined ? {} : { defaultContainer: defaultChild.path }),
+    ...(defaultContainer === undefined ? {} : { defaultContainer }),
   };
 }
 

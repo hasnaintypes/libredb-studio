@@ -2736,6 +2736,34 @@ describe("scoping the connect-time read to the session default", () => {
     expect(result.current.defaultContainer).toEqual(["memory", "default"]);
   });
 
+  test("declines a default schema on a tie, same as the unscoped route would (#1592)", async () => {
+    const bodies: { kinds?: string[] }[] = [];
+    mockGlobalFetch({
+      "/api/db/provider-meta": providerMetaTwoLevel(),
+      "/api/db/objects/containers": containersRoute([{ path: ["memory"], isSessionDefault: true }], {
+        '["memory"]': [
+          { path: ["memory", "default"], isSessionDefault: true },
+          { path: ["memory", "app"], isSessionDefault: true },
+        ],
+      }),
+      "/api/db/objects/inventory": inventoryRoute(OBJECTS, bodies),
+    });
+
+    const { result } = renderHook(() => useConnectionManager(true));
+
+    await act(async () => {
+      await result.current.fetchSchema(makeConnection());
+    });
+
+    expect(bodies[0]).toMatchObject({
+      containers: [
+        ["memory", "default"],
+        ["memory", "app"],
+      ],
+    });
+    expect(result.current.defaultContainer).toBeUndefined();
+  });
+
   test("falls back to the route's own enumeration when nothing is pinned", async () => {
     const bodies: { kinds?: string[] }[] = [];
     mockGlobalFetch({
