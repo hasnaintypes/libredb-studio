@@ -1983,7 +1983,7 @@ describe("useTabManager opens a Source tab", () => {
     expect(result.current.tabs[1].source?.readAtToken).toBeUndefined();
   });
 
-  test("a second View Source on a DIRTY tab leaves the document alone, so an unsaved edit is never replaced (#1407)", () => {
+  test("a second View Source on a DIRTY tab marks it stale instead of clearing it, so an unsaved edit is never replaced (#1407)", () => {
     const { result } = renderHook(() =>
       useTabManager({ activeConnection: makeConnection(), metadata: defaultMetadata, schema: [] }),
     );
@@ -2013,8 +2013,11 @@ describe("useTabManager opens a Source tab", () => {
 
     expect(result.current.activeTabId).toBe(tabId);
     expect(result.current.tabs[1].source?.document).toEqual(definitionDocument);
-    expect(result.current.tabs[1].source?.readAtToken).toBe(2);
     expect(result.current.tabs[1].source?.dirty).toBe(true);
+    // `-1`: `objectRefreshToken` only ever counts up from 0, so this can never equal it and the
+    // viewer's stale banner shows - the way back for a reader who does not want to lose a draft
+    // by letting the refresh button (disabled while dirty) or a re-read clear it outright.
+    expect(result.current.tabs[1].source?.readAtToken).toBe(-1);
   });
 
   test("the match is on the path and the KIND, so one name in two roles opens two tabs", () => {
