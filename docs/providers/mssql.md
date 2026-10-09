@@ -778,6 +778,10 @@ the DEEPEST declared level and reads the counts there (#789). An engine that mar
 level opens a database and stops, with no folder and no count. This is the only two-level engine, so
 it is the only one where the distinction exists.
 
+The connect-time inventory read (autocomplete, the ERD) is scoped the same way (#1402): it sees the
+connected database's schemas without listing every other database on the server, while the tree
+still lists all of them lazily, one container at a time.
+
 > **UNVERIFIED against a live server.** The two columns are implemented from Microsoft's documented
 > behaviour of `SCHEMA_NAME()` and `DB_NAME()`; no SQL Server was available when they were added. The
 > fixture in `tests/integration/db/mssql-provider.test.ts` states what that behaviour produces, and
